@@ -1,0 +1,336 @@
+"use client";
+
+import React, { useState } from "react";
+import {
+  TrendingUp,
+  CheckCircle2,
+  Info,
+} from "lucide-react";
+import { MOCK_HOLDINGS } from "../data/mockData";
+import { formatInr } from "../lib/format";
+import { useWallet } from "../context/WalletContext";
+
+export const HeroDashboard: React.FC = () => {
+  const { isConnected, shortAddress, role, kycStatus } = useWallet();
+  const [timeframe, setTimeframe] = useState<"24H" | "7D" | "1M" | "1Y">("24H");
+  const [activeAssetHover, setActiveAssetHover] = useState<string | null>(null);
+
+  // Sparkline coordinates
+  const sparklineData = {
+    "24H": [
+      { x: 0, y: 55 },
+      { x: 30, y: 52 },
+      { x: 60, y: 48 },
+      { x: 90, y: 45 },
+      { x: 120, y: 49 },
+      { x: 150, y: 40 },
+      { x: 180, y: 35 },
+      { x: 210, y: 28 },
+      { x: 240, y: 22 },
+      { x: 270, y: 15 },
+      { x: 300, y: 12 },
+    ],
+    "7D": [
+      { x: 0, y: 65 },
+      { x: 30, y: 58 },
+      { x: 60, y: 50 },
+      { x: 90, y: 42 },
+      { x: 120, y: 45 },
+      { x: 150, y: 38 },
+      { x: 180, y: 30 },
+      { x: 210, y: 25 },
+      { x: 240, y: 20 },
+      { x: 270, y: 18 },
+      { x: 300, y: 10 },
+    ],
+    "1M": [
+      { x: 0, y: 70 },
+      { x: 30, y: 62 },
+      { x: 60, y: 58 },
+      { x: 90, y: 52 },
+      { x: 120, y: 40 },
+      { x: 150, y: 34 },
+      { x: 180, y: 32 },
+      { x: 210, y: 22 },
+      { x: 240, y: 18 },
+      { x: 270, y: 14 },
+      { x: 300, y: 8 },
+    ],
+    "1Y": [
+      { x: 0, y: 80 },
+      { x: 30, y: 75 },
+      { x: 60, y: 62 },
+      { x: 90, y: 55 },
+      { x: 120, y: 45 },
+      { x: 150, y: 39 },
+      { x: 180, y: 28 },
+      { x: 210, y: 24 },
+      { x: 240, y: 19 },
+      { x: 270, y: 12 },
+      { x: 300, y: 6 },
+    ],
+  };
+
+  const currentPoints = sparklineData[timeframe];
+  const pathD = currentPoints.reduce(
+    (acc, pt, idx) => (idx === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`),
+    ""
+  );
+  const areaD = `${pathD} L 300 80 L 0 80 Z`;
+
+  return (
+    <div className="relative w-full max-w-lg mx-auto lg:max-w-none">
+      <div className="absolute -inset-4 bg-gradient-to-tr from-amber-600/20 via-orange-500/10 to-transparent rounded-3xl blur-2xl -z-10 pointer-events-none opacity-80" />
+
+      {/* Floating Badge 1: KYC status */}
+      <div className="absolute -top-4 -right-2 sm:-right-4 z-20 flex items-center gap-2 px-3 py-2 rounded-xl bg-[#17120e]/90 border border-amber-500/30 backdrop-blur-xl shadow-xl shadow-black/60 transition-transform duration-300 hover:scale-105">
+        <div className={`w-5 h-5 rounded-full flex items-center justify-center ${kycStatus === "Approved" ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}`}>
+          <CheckCircle2 className="w-3.5 h-3.5" />
+        </div>
+        <div>
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[11px] font-semibold ${kycStatus === "Approved" ? "text-emerald-400" : "text-[#eae6dd]"}`}>
+              {isConnected ? (kycStatus === "Approved" ? "KYC Verified" : kycStatus === "Pending" ? "KYC Pending" : "KYC: None") : "KYC Demo"}
+            </span>
+            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+              {isConnected ? role : "Sample"}
+            </span>
+          </div>
+          <p className="text-[10px] text-[#8e887d]">
+            {isConnected ? "On-chain Registry" : "Registry Hash Verified"}
+          </p>
+        </div>
+      </div>
+
+      {/* Floating Badge 2: Wallet Connected */}
+      <div className="absolute -bottom-4 -left-2 sm:-left-4 z-20 flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-[#17120e]/95 border border-amber-500/30 backdrop-blur-xl shadow-xl shadow-black/60 transition-transform duration-300 hover:scale-105">
+        <div className="relative flex h-2.5 w-2.5">
+          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isConnected ? "bg-emerald-400" : "bg-amber-400"} opacity-75`}></span>
+          <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isConnected ? "bg-emerald-500" : "bg-amber-500"}`}></span>
+        </div>
+        <div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-semibold text-[#f0ede6]">
+              {isConnected ? shortAddress : "Wallet Preview"}
+            </span>
+            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+              {isConnected ? "Connected" : "Sample"}
+            </span>
+          </div>
+          <p className="text-[10px] font-mono text-[#8e887d]">
+            {isConnected ? "Sepolia Live" : "Connect to view balance"}
+          </p>
+        </div>
+      </div>
+
+      {/* Main Glass Dashboard Card */}
+      <div className="relative rounded-2xl bg-[#120e0c]/90 border border-amber-900/30 backdrop-blur-2xl shadow-2xl shadow-black/80 p-5 sm:p-6 overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-amber-500/40 to-transparent" />
+
+        {/* Top bar with visible sample badge */}
+        <div className="flex items-center justify-between pb-4 border-b border-white/5">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+            <span className="text-[11px] uppercase tracking-wider font-mono text-[#989287]">
+              Sepolia Testnet
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/25">
+              Sample data, contracts not connected yet
+            </span>
+          </div>
+        </div>
+
+        {/* Portfolio Balance Header in INR and ETH */}
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+          <div>
+            <span className="text-xs uppercase tracking-wider text-[#8e887d] font-medium">
+              Sample Portfolio Value
+            </span>
+            <div className="flex items-baseline gap-2.5 mt-0.5">
+              <span className="text-3xl sm:text-4xl font-semibold tracking-tight text-[#f6f5f0]">
+                {formatInr(12500)}
+              </span>
+              <span className="text-xs font-mono text-amber-400/90 font-medium">
+                (0.0025 ETH)
+              </span>
+            </div>
+            <span className="text-[10px] text-[#736e65]">Demo conversion, not a real exchange rate.</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium font-mono">
+              <TrendingUp className="w-3 h-3" />
+              <span>+0.0001 ETH</span>
+              <span className="text-emerald-500/80">(+4.1%)</span>
+            </div>
+            <span className="text-[10px] text-[#736e65]">Sample</span>
+          </div>
+        </div>
+
+        {/* Timeframe selector & upward sparkline */}
+        <div className="mt-5 p-3 rounded-xl bg-[#0c0908]/70 border border-white/5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] text-[#8e887d] font-medium flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+              Portfolio Growth (Sample)
+            </span>
+            <div className="flex items-center gap-1 bg-white/5 p-0.5 rounded-lg">
+              {(["24H", "7D", "1M", "1Y"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTimeframe(t)}
+                  className={`text-[10px] font-mono px-2 py-0.5 rounded transition-all ${
+                    timeframe === t
+                      ? "bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30"
+                      : "text-[#8e887d] hover:text-white"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* SVG Sparkline */}
+          <div className="w-full h-20 relative">
+            <svg
+              viewBox="0 0 300 80"
+              preserveAspectRatio="none"
+              className="w-full h-full overflow-visible"
+            >
+              <defs>
+                <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.35" />
+                  <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.0" />
+                </linearGradient>
+              </defs>
+              <path d={areaD} fill="url(#chartGradient)" />
+              <path
+                d={pathD}
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle
+                cx={currentPoints[currentPoints.length - 1].x}
+                cy={currentPoints[currentPoints.length - 1].y}
+                r="4"
+                fill="#fbbf24"
+                stroke="#120e0c"
+                strokeWidth="2"
+              />
+            </svg>
+          </div>
+        </div>
+
+        {/* Allocation Donut Chart + Holdings Grid */}
+        <div className="mt-5 grid grid-cols-1 sm:grid-cols-12 gap-4 items-center pt-4 border-t border-white/5">
+          <div className="sm:col-span-5 flex flex-col items-center justify-center p-2 rounded-xl bg-white/[0.02]">
+            <div className="relative w-28 h-28">
+              <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  fill="transparent"
+                  stroke="#1c1612"
+                  strokeWidth="11"
+                />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  fill="transparent"
+                  stroke="#f59e0b"
+                  strokeWidth="11"
+                  strokeDasharray="238.76"
+                  strokeDashoffset="124.1"
+                  strokeLinecap="round"
+                  className="transition-all duration-300 hover:opacity-90"
+                />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  fill="transparent"
+                  stroke="#10b981"
+                  strokeWidth="11"
+                  strokeDasharray="238.76"
+                  strokeDashoffset="162.3"
+                  transform="rotate(172 50 50)"
+                  strokeLinecap="round"
+                  className="transition-all duration-300 hover:opacity-90"
+                />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="38"
+                  fill="transparent"
+                  stroke="#fb923c"
+                  strokeWidth="11"
+                  strokeDasharray="238.76"
+                  strokeDashoffset="191.0"
+                  transform="rotate(288 50 50)"
+                  strokeLinecap="round"
+                  className="transition-all duration-300 hover:opacity-90"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-[10px] uppercase font-mono text-[#8e887d]">Sample</span>
+                <span className="text-sm font-bold text-[#f6f5f0]">3</span>
+              </div>
+            </div>
+            <span className="text-[11px] font-medium text-[#8e887d] mt-1">Sample Holdings</span>
+          </div>
+
+          <div className="sm:col-span-7 flex flex-col space-y-2">
+            {MOCK_HOLDINGS.map((h) => (
+              <div
+                key={h.id}
+                onMouseEnter={() => setActiveAssetHover(h.id)}
+                onMouseLeave={() => setActiveAssetHover(null)}
+                className={`flex items-center justify-between p-2 rounded-lg transition-all border ${
+                  activeAssetHover === h.id
+                    ? "bg-amber-950/20 border-amber-500/30"
+                    : "bg-[#0d0a08]/50 border-white/5 hover:border-white/10"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: h.color }}
+                  ></span>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-medium text-[#f0ede6]">{h.name}</span>
+                      <span className="text-[9px] font-mono text-[#8e887d]">{h.symbol}</span>
+                    </div>
+                    <span className="text-[10px] text-[#736e65]">{h.tokens} tokens</span>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <div className="text-xs font-semibold text-[#f0ede6]">
+                    {formatInr(h.valueInr)}
+                  </div>
+                  <div className="text-[10px] font-mono text-amber-400">{h.valueEth}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-[#787268]">
+          <div className="flex items-center gap-1.5">
+            <Info className="w-3.5 h-3.5 text-amber-400" />
+            <span>Sample data for preview. Real on-chain balance connects in Phase 3.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
