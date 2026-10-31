@@ -10,9 +10,9 @@ export interface AssetConfig {
   initialPriceEth?: string;
 }
 
-// Sepolia RPC configuration
+// Sepolia RPC configuration with reliable fallback
 export const SEPOLIA_RPC_URL =
-  process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "https://rpc.sepolia.org";
+  process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com";
 
 export function getReadOnlyProvider(): JsonRpcProvider {
   return new JsonRpcProvider(SEPOLIA_RPC_URL);
@@ -23,9 +23,14 @@ export function isZeroAddress(addr: string | null | undefined): boolean {
   return addr.toLowerCase() === "0x0000000000000000000000000000000000000000";
 }
 
-// Registry contract placeholder
-export const REGISTRY_ADDRESS = "0x0000000000000000000000000000000000000000";
+// Deployed Sepolia Contract Addresses
+export const REGISTRY_ADDRESS = "0xb59EcE2e95d92F7edB468518111B429B59dE2DC9";
+export const FLAT_ADDRESS = "0x67c71f57b36de075523ce1502f8f8d46b39164f0";
 
+// Re-export full ABIs from src/contract.js
+export { KYC_REGISTRY_ABI, ASSET_TOKEN_ABI } from "../contract";
+
+// Human-readable ABI strings for lightweight ethers.js usage
 export const REGISTRY_ABI = [
   "function isKycApproved(address user) external view returns (bool)",
   "function isApproved(address user) external view returns (bool)",
@@ -39,10 +44,9 @@ export const REGISTRY_ABI = [
   "function owner() external view returns (address)",
   "event KycRequested(address indexed user, bytes32 dataHash)",
   "event KycApproved(address indexed user)",
-  "event KycRejected(address indexed user)"
+  "event KycRejected(address indexed user)",
 ];
 
-// Asset contract ABI matching AssetToken.sol
 export const ASSET_ABI = [
   "function name() external view returns (string)",
   "function symbol() external view returns (string)",
@@ -61,6 +65,7 @@ export const ASSET_ABI = [
   "function maturityTimestamp() external view returns (uint256)",
   "function bondTermsSet() external view returns (bool)",
   "function owner() external view returns (address)",
+  "function registry() external view returns (address)",
   "function buy(uint256 amount) external payable",
   "function setAssetInfo(string memory name, string memory location, string memory docURI) external",
   "function setBondTerms(uint256 _faceValueWei, uint256 _couponRateBps, uint256 _maturityTimestamp) external",
@@ -81,44 +86,17 @@ export const ASSET_ABI = [
   "event MaturitySettled(uint256 total, uint256 holderCount)",
   "event ListingCreated(uint256 indexed id, address indexed seller, uint256 amount, uint256 priceWei)",
   "event ListingSold(uint256 indexed id, address indexed buyer)",
-  "event ListingCancelled(uint256 indexed id)"
+  "event ListingCancelled(uint256 indexed id)",
 ];
 
-// The 4 PRD Assets (Section 8.7)
+// ASSETS list containing ONLY Flat (naam 'Jaipur Flat', type RealEstate)
 export const ASSETS: AssetConfig[] = [
   {
     key: "jaipur-flat",
     symbol: "JFT",
     name: "Jaipur Flat",
     type: "RealEstate",
-    address: "0x0000000000000000000000000000000000000000",
-    deployBlock: 0,
-    initialPriceEth: "0.0001",
-  },
-  {
-    key: "jaipur-plot",
-    symbol: "JPT",
-    name: "Jaipur Plot",
-    type: "Plot",
-    address: "0x0000000000000000000000000000000000000000",
-    deployBlock: 0,
-    initialPriceEth: "0.0001",
-  },
-  {
-    key: "digital-gold",
-    symbol: "TGOLD",
-    name: "Digital Gold",
-    type: "Gold",
-    address: "0x0000000000000000000000000000000000000000",
-    deployBlock: 0,
-    initialPriceEth: "0.00003",
-  },
-  {
-    key: "sample-bond",
-    symbol: "TBOND",
-    name: "Sample Bond",
-    type: "Bond",
-    address: "0x0000000000000000000000000000000000000000",
+    address: FLAT_ADDRESS,
     deployBlock: 0,
     initialPriceEth: "0.0001",
   },

@@ -8,15 +8,22 @@ import {
   ArrowRight,
   Sparkles,
   ExternalLink,
+  RotateCw,
+  AlertTriangle,
 } from "lucide-react";
+import { Contract } from "ethers";
+import { toast } from "sonner";
 import { Asset } from "../lib/types";
 import { inrToTokens, formatInr, formatEth } from "../lib/format";
 import { RiskModal } from "./RiskModal";
+import { useWallet } from "../context/WalletContext";
+import { ASSET_ABI, FLAT_ADDRESS } from "../lib/contract";
+import { getFriendlyErrorMessage } from "../lib/errors";
 
 interface AssetModalProps {
   asset: Asset | null;
   onClose: () => void;
-  onSimulatedBuy: (asset: Asset, tokens: number, costInr: number) => void;
+  onSimulatedBuy?: (asset: Asset, tokens: number, costInr: number) => void;
 }
 
 export const AssetModal: React.FC<AssetModalProps> = ({
@@ -24,11 +31,24 @@ export const AssetModal: React.FC<AssetModalProps> = ({
   onClose,
   onSimulatedBuy,
 }) => {
+  const {
+    isConnected,
+    isCorrectNetwork,
+    signer,
+    kycStatus,
+    connect,
+    switchToSepolia,
+    refreshState,
+  } = useWallet();
+
   const [mode, setMode] = useState<"inr" | "tokens">("inr");
-  const [inrAmount, setInrAmount] = useState<number>(asset?.priceInr ? asset.priceInr * 10 : 5000);
+  const [inrAmount, setInrAmount] = useState<number>(
+    asset?.priceInr ? asset.priceInr * 10 : 5000
+  );
   const [tokenCount, setTokenCount] = useState<number>(10);
   const [purchaseSuccess, setPurchaseSuccess] = useState<boolean>(false);
-  const [simulatedTxHash, setSimulatedTxHash] = useState<string>("");
+  const [txHash, setTxHash] = useState<string>("");
+  const [isBuying, setIsBuying] = useState<boolean>(false);
   const [isRiskModalOpen, setIsRiskModalOpen] = useState<boolean>(false);
 
   if (!asset) return null;
@@ -36,25 +56,67 @@ export const AssetModal: React.FC<AssetModalProps> = ({
   // Pricing calculations
   const priceWei = asset.pricePerTokenWei;
   const inrResult = inrToTokens(inrAmount, priceWei);
-  
+
   const tokensToBuy = mode === "inr" ? Number(inrResult.tokens) : tokenCount;
   const totalCostWei = BigInt(tokensToBuy) * priceWei;
   const totalCostInr = tokensToBuy * asset.priceInr;
   const leftoverInr = mode === "inr" ? inrResult.leftoverInr : 0;
   const formattedEth = formatEth(totalCostWei, 6);
 
-  const presets = asset.type === "Gold" 
-    ? [150, 450, 1500, 3000, 7500] 
-    : [500, 1500, 5000, 10000, 25000];
+  const presets = [500, 1500, 5000, 10000, 25000];
 
-  const handleConfirmPurchase = () => {
+  const handleConfirmPurchase = async () => {
     if (tokensToBuy <= 0) return;
-    const randomHash = `0x${Array.from({ length: 40 }, () =>
-      Math.floor(Math.random() * 16).toString(16)
-    ).join("")}`;
-    setSimulatedTxHash(randomHash);
-    setPurchaseSuccess(true);
-    onSimulatedBuy(asset, tokensToBuy, totalCostInr);
+
+    if (!isConnected) {
+      toast.info("Please connect your MetaMask wallet first.");
+      connect();
+      return;
+    }
+
+    if (!isCorrectNetwork) {
+      toast.error("Please switch your wallet network to Sepolia testnet.");
+      switchToSepolia();
+      return;
+    }
+
+    if (kycStatus !== "Approved") {
+      toast.error("This wallet is not KYC verified yet.");
+      return;
+    }
+
+    if (!signer) {
+      toast.error("Signer not ready. Please check MetaMask.");
+      return;
+    }
+
+    setIsBuying(true);
+    try {
+      toast.info("Waiting for MetaMask signature...");
+      const targetAddress = asset.address || FLAT_ADDRESS;
+      const contract = new Contract(targetAddress, ASSET_ABI, signer);
+
+      const tx = await contract.buy(tokensToBuy, { value: totalCostWei });
+      toast.info("Transaction sent to Sepolia! Waiting for confirmation...");
+      const receipt = await tx.wait();
+
+      const finalHash = receipt?.hash || tx.hash;
+      setTxHash(finalHash);
+      setPurchaseSuccess(true);
+      toast.success(
+        `Successfully bought ${tokensToBuy} ${asset.symbol} tokens on Sepolia!`
+      );
+
+      if (onSimulatedBuy) {
+        onSimulatedBuy(asset, tokensToBuy, totalCostInr);
+      }
+      refreshState();
+    } catch (err: unknown) {
+      console.error("Buy error:", err);
+      toast.error(getFriendlyErrorMessage(err));
+    } finally {
+      setIsBuying(false);
+    }
   };
 
   return (
@@ -81,31 +143,32 @@ export const AssetModal: React.FC<AssetModalProps> = ({
 
             <div className="space-y-2">
               <span className="text-xs font-mono uppercase tracking-wider text-emerald-400 font-semibold">
-                Simulated Transaction Confirmed
+                Transaction Confirmed on Sepolia
               </span>
               <h3 className="text-2xl font-semibold text-[#f6f5f0]">
-                {tokensToBuy} {asset.symbol} Tokens Minted
+                {tokensToBuy} {asset.symbol} Tokens Purchased
               </h3>
-              {asset.type === "Gold" && (
-                <p className="text-sm font-mono text-amber-400">
-                  Equivalent to {(tokensToBuy * 0.01).toFixed(2)} grams of gold
-                </p>
-              )}
               <p className="text-sm text-[#9a9489] max-w-md mx-auto">
-                Your simulated purchase of {formatInr(totalCostInr)} ({formattedEth}) was signed and minted on the Sepolia testnet sandbox.
+                Your on-chain purchase of {formatInr(totalCostInr)} ({formattedEth}) was executed against the real AssetToken smart contract.
               </p>
             </div>
 
             <div className="p-4 rounded-xl bg-[#0d0a08] border border-white/5 text-left text-xs space-y-2 font-mono">
               <div className="flex justify-between text-[#817b71]">
                 <span>Status</span>
-                <span className="text-emerald-400">Success (Block #6,928,114)</span>
+                <span className="text-emerald-400">Success (On-chain)</span>
               </div>
-              <div className="flex justify-between text-[#817b71]">
+              <div className="flex justify-between items-center text-[#817b71]">
                 <span>Tx Hash</span>
-                <span className="text-[#f6f5f0] truncate max-w-[200px] sm:max-w-[280px]">
-                  {simulatedTxHash}
-                </span>
+                <a
+                  href={`https://sepolia.etherscan.io/tx/${txHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-amber-400 hover:underline flex items-center gap-1 truncate max-w-[200px] sm:max-w-[280px]"
+                >
+                  <span className="truncate">{txHash}</span>
+                  <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                </a>
               </div>
               <div className="flex justify-between text-[#817b71]">
                 <span>Network</span>
@@ -136,6 +199,9 @@ export const AssetModal: React.FC<AssetModalProps> = ({
                 <span className="text-xs text-[#8e887d]">
                   {asset.typeLabel} · ERC-20
                 </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  Sepolia Live Contract
+                </span>
               </div>
 
               <h2 className="text-2xl sm:text-3xl font-semibold text-[#f6f5f0]">
@@ -159,104 +225,110 @@ export const AssetModal: React.FC<AssetModalProps> = ({
                   onClick={onClose}
                   className="inline-flex items-center gap-1 text-xs font-mono px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-[#d6d0c4] border border-white/10 transition-colors"
                 >
-                  <span>Full Asset Page & Market</span>
+                  <span>Full Asset Details</span>
                   <ExternalLink className="w-3 h-3" />
                 </Link>
               </div>
             </div>
 
-            {/* Asset Specs */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-[#0c0908] border border-white/5 text-xs">
+            {/* Price & Primary Sale Bar */}
+            <div className="grid grid-cols-2 gap-3 p-4 rounded-xl bg-[#0d0a08] border border-white/5 text-xs">
               <div>
-                <span className="text-[#787268] text-[10px] uppercase font-mono">
-                  Asset Location / Unit
+                <span className="text-[#817b71] uppercase tracking-wider text-[10px]">
+                  Price per token
                 </span>
-                <div className="text-[#eae6dd] font-medium mt-0.5">
-                  {asset.assetLocation}
+                <div className="text-base font-semibold text-[#f6f5f0] mt-0.5">
+                  {formatInr(asset.priceInr)}{" "}
+                  <span className="text-amber-400 font-mono text-xs">
+                    ({asset.priceEth})
+                  </span>
                 </div>
               </div>
               <div>
-                <span className="text-[#787268] text-[10px] uppercase font-mono">
-                  Price Per Token
+                <span className="text-[#817b71] uppercase tracking-wider text-[10px]">
+                  Primary Remaining
                 </span>
-                <div className="text-amber-400 font-semibold font-mono mt-0.5">
-                  {formatInr(asset.priceInr)} ({asset.priceEth})
-                </div>
-              </div>
-              <div>
-                <span className="text-[#787268] text-[10px] uppercase font-mono">
-                  Tokens Remaining
-                </span>
-                <div className="text-[#eae6dd] font-mono mt-0.5">
-                  {asset.primarySaleRemaining.toLocaleString("en-IN")} of {asset.totalSupply.toLocaleString("en-IN")}
-                </div>
-              </div>
-              <div>
-                <span className="text-[#787268] text-[10px] uppercase font-mono">
-                  Highlight
-                </span>
-                <div className="text-[#eae6dd] font-medium mt-0.5">
-                  {asset.highlight}
+                <div className="text-base font-mono font-semibold text-[#f6f5f0] mt-0.5">
+                  {asset.primarySaleRemaining.toLocaleString("en-IN")}{" "}
+                  <span className="text-[#736e65] text-xs">
+                    / {asset.totalSupply.toLocaleString("en-IN")}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Interactive Buy Panel */}
-            <div className="p-4 rounded-xl bg-amber-950/10 border border-amber-500/25 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs uppercase font-mono tracking-wider text-amber-400 font-semibold flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Buy Tokens
-                </span>
+            {/* Warning if wallet not approved */}
+            {isConnected && kycStatus !== "Approved" && (
+              <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-rose-200">
+                    This wallet is not KYC verified yet.
+                  </div>
+                  <div className="text-[11px] text-rose-300/80 mt-0.5">
+                    The smart contract strictly prevents unverified wallets from receiving or buying tokens. Please submit KYC to proceed.
+                  </div>
+                </div>
+              </div>
+            )}
 
-                {/* INR | Tokens toggle */}
-                <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-white/10 text-xs">
+            {/* Mode Switcher */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="text-xs uppercase font-mono tracking-wider text-[#8e887d]">
+                  Purchase Mode
+                </label>
+                <div className="inline-flex rounded-lg bg-black/40 p-1 border border-white/5">
                   <button
                     type="button"
                     onClick={() => setMode("inr")}
-                    className={`px-2.5 py-1 rounded font-medium transition-all ${
+                    className={`px-3 py-1 text-xs rounded-md transition-all ${
                       mode === "inr"
-                        ? "bg-amber-500 text-stone-950 font-semibold"
+                        ? "bg-amber-500/20 text-amber-300 font-semibold"
                         : "text-[#8e887d] hover:text-white"
                     }`}
                   >
-                    Enter INR
+                    INR Budget (₹)
                   </button>
                   <button
                     type="button"
                     onClick={() => setMode("tokens")}
-                    className={`px-2.5 py-1 rounded font-medium transition-all ${
+                    className={`px-3 py-1 text-xs rounded-md transition-all ${
                       mode === "tokens"
-                        ? "bg-amber-500 text-stone-950 font-semibold"
+                        ? "bg-amber-500/20 text-amber-300 font-semibold"
                         : "text-[#8e887d] hover:text-white"
                     }`}
                   >
-                    Enter Tokens
+                    Token Count
                   </button>
                 </div>
               </div>
 
-              {/* Presets in INR mode */}
-              {mode === "inr" && (
+              {/* Quick Preset Buttons */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] text-[#817b71]">Quick Select:</span>
                 <div className="flex flex-wrap gap-2">
-                  {presets.map((amt) => (
+                  {presets.map((val) => (
                     <button
-                      key={amt}
-                      onClick={() => setInrAmount(amt)}
+                      key={val}
                       type="button"
-                      className={`px-3 py-1 rounded-lg text-xs font-mono font-medium transition-all ${
-                        inrAmount === amt
-                          ? "bg-amber-500 text-stone-950 shadow-sm"
-                          : "bg-white/5 text-[#c4beb3] hover:bg-white/10"
-                      }`}
+                      onClick={() => {
+                        if (mode === "inr") {
+                          setInrAmount(val);
+                        } else {
+                          const tks = Math.floor(val / asset.priceInr);
+                          setTokenCount(Math.max(1, tks));
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-amber-500/10 text-xs font-mono text-[#d6d0c4] hover:text-amber-300 border border-white/5 hover:border-amber-500/30 transition-all"
                     >
-                      {formatInr(amt)}
+                      {formatInr(val)}
                     </button>
                   ))}
                 </div>
-              )}
+              </div>
 
-              {/* Input field */}
+              {/* Input Slider / Field */}
               {mode === "inr" ? (
                 <div className="space-y-1">
                   <label className="text-xs text-[#8e887d] flex justify-between">
@@ -293,7 +365,11 @@ export const AssetModal: React.FC<AssetModalProps> = ({
                     max={asset.primarySaleRemaining}
                     step={1}
                     value={tokenCount}
-                    onChange={(e) => setTokenCount(Math.max(1, Math.min(asset.primarySaleRemaining, Number(e.target.value))))}
+                    onChange={(e) =>
+                      setTokenCount(
+                        Math.max(1, Math.min(asset.primarySaleRemaining, Number(e.target.value)))
+                      )
+                    }
                     className="w-full bg-[#0a0807] border border-white/10 rounded-xl px-3.5 py-2.5 text-sm font-mono text-[#f6f5f0] focus:outline-none focus:border-amber-500/50"
                   />
                   <div className="text-[11px] text-[#8e887d]">
@@ -314,13 +390,8 @@ export const AssetModal: React.FC<AssetModalProps> = ({
                   <span className="text-amber-400">=</span>
                   <span className="text-emerald-400">{formattedEth}</span>
                 </div>
-                {asset.type === "Gold" && (
-                  <div className="text-xs font-mono text-amber-400 pt-0.5">
-                    Gold weight: {(tokensToBuy * 0.01).toFixed(2)} grams
-                  </div>
-                )}
                 <div className="text-[10px] text-[#736e65]">
-                  Demo conversion, not a real exchange rate.
+                  Live rate from Sepolia contract. 1 ETH = ₹50,00,000 demo conversion.
                 </div>
               </div>
 
@@ -334,15 +405,24 @@ export const AssetModal: React.FC<AssetModalProps> = ({
             <div className="pt-2">
               <button
                 onClick={handleConfirmPurchase}
-                disabled={tokensToBuy <= 0}
+                disabled={tokensToBuy <= 0 || isBuying}
                 type="button"
                 className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-stone-950 font-bold text-sm shadow-xl shadow-amber-500/20 active:scale-[0.99] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                <span>Simulate Buy ({formattedEth})</span>
-                <ArrowRight className="w-4 h-4" />
+                {isBuying ? (
+                  <>
+                    <RotateCw className="w-4 h-4 animate-spin text-stone-950" />
+                    <span>Signing & Confirming on Sepolia...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Buy on Sepolia ({formattedEth})</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
               <p className="text-[10px] text-center text-[#736e65] mt-2 font-mono">
-                * Testnet transaction on Sepolia. No real funds or fiat currency involved.
+                * Real testnet contract buy on Sepolia ({FLAT_ADDRESS}).
               </p>
             </div>
           </div>

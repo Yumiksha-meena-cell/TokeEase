@@ -72,143 +72,82 @@ export const WalletPreview: React.FC<WalletPreviewProps> = ({
 
   // Build combined portfolio data (F19 & F7)
   const loadPortfolioData = useCallback(async () => {
-    // If contracts are deployed and user is connected, read on-chain data
-    const hasDeployedContracts = ASSETS.some((a) => !isZeroAddress(a.address));
+    try {
+      const readProvider = getReadOnlyProvider();
+      const asset = ASSETS[0];
+      const contract = new Contract(asset.address, ASSET_ABI, readProvider);
 
-    if (hasDeployedContracts && address) {
-      try {
-        const readProvider = getReadOnlyProvider();
-        const rows: PortfolioRow[] = [];
+      const [onChainName, priceWei, totalSupply, bal, totalSpentWei] = await Promise.all([
+        contract.assetName().catch(() => ""),
+        contract.pricePerTokenWei().catch(() => BigInt("100000000000000")),
+        contract.totalSupply().catch(() => BigInt(10000)),
+        address ? contract.balanceOf(address).catch(() => BigInt(0)) : Promise.resolve(BigInt(0)),
+        address ? contract.totalSpentWei(address).catch(() => BigInt(0)) : Promise.resolve(BigInt(0)),
+      ]);
 
-        for (const asset of ASSETS) {
-          if (!isZeroAddress(asset.address)) {
-            const contract = new Contract(asset.address, ASSET_ABI, readProvider);
-            const [bal, priceWei, totalSpentWei, totalSupply] = await Promise.all([
-              contract.balanceOf(address),
-              contract.pricePerTokenWei(),
-              contract.totalSpentWei(address),
-              contract.totalSupply(),
-            ]);
+      const displayName =
+        onChainName && typeof onChainName === "string" && onChainName.trim() !== ""
+          ? onChainName.trim()
+          : "Jaipur Flat";
 
-            const balNum = Number(bal);
-            const priceEthNum = parseFloat(formatEther(priceWei));
-            const priceInr = Math.round((priceEthNum / 0.0001) * 500);
+      const balNum = Number(bal);
+      const priceEthNum = parseFloat(formatEther(priceWei));
+      const priceInr = Math.round((priceEthNum / 0.0001) * 500);
 
-            const valWei = BigInt(balNum) * BigInt(priceWei);
-            const valEthNum = parseFloat(formatEther(valWei));
-            const valInr = balNum * priceInr;
+      const valWei = BigInt(balNum) * BigInt(priceWei);
+      const valEthNum = parseFloat(formatEther(valWei));
+      const valInr = balNum * priceInr;
 
-            const spentEthNum = parseFloat(formatEther(totalSpentWei));
-            const spentInr = Math.round((spentEthNum / 0.0001) * 500);
+      const spentEthNum = parseFloat(formatEther(totalSpentWei));
+      const spentInr = Math.round((spentEthNum / 0.0001) * 500);
 
-            const pnlInr = valInr - spentInr;
-            const pnlEthNum = valEthNum - spentEthNum;
+      const pnlInr = valInr - spentInr;
+      const pnlEthNum = valEthNum - spentEthNum;
 
-            const supplyNum = Number(totalSupply) || 1;
-            const ownershipPercent = ((balNum / supplyNum) * 100).toFixed(2);
+      const supplyNum = Number(totalSupply) || 10000;
+      const ownershipPercent = ((balNum / supplyNum) * 100).toFixed(2);
 
-            rows.push({
-              key: asset.key,
-              symbol: asset.symbol,
-              name: asset.name,
-              type: asset.type,
-              balance: balNum,
-              grams: asset.type === "Gold" ? balNum * 0.01 : undefined,
-              ownershipPercent,
-              priceInr,
-              priceEth: `${priceEthNum} ETH`,
-              currentValueInr: valInr,
-              currentValueEth: `${valEthNum.toFixed(6)} ETH`,
-              totalSpentInr: spentInr,
-              totalSpentEth: `${spentEthNum.toFixed(6)} ETH`,
-              pnlInr,
-              pnlEth: `${pnlEthNum >= 0 ? "+" : ""}${pnlEthNum.toFixed(6)} ETH`,
-              isProfit: pnlInr >= 0,
-            });
-          }
-        }
-
-        if (rows.length > 0) {
-          setPortfolioRows(rows);
-          return;
-        }
-      } catch (err) {
-        console.warn("Could not query on-chain holdings, using simulated view:", err);
-      }
+      setPortfolioRows([
+        {
+          key: asset.key,
+          symbol: asset.symbol,
+          name: displayName,
+          type: asset.type,
+          balance: balNum,
+          ownershipPercent,
+          priceInr,
+          priceEth: `${priceEthNum} ETH`,
+          currentValueInr: valInr,
+          currentValueEth: `${valEthNum.toFixed(6)} ETH`,
+          totalSpentInr: spentInr,
+          totalSpentEth: `${spentEthNum.toFixed(6)} ETH`,
+          pnlInr,
+          pnlEth: `${pnlEthNum >= 0 ? "+" : ""}${pnlEthNum.toFixed(6)} ETH`,
+          isProfit: pnlInr >= 0,
+        },
+      ]);
+    } catch (err) {
+      console.warn("Could not query on-chain holdings:", err);
+      setPortfolioRows([
+        {
+          key: "jaipur-flat",
+          symbol: "JFT",
+          name: "Jaipur Flat",
+          type: "RealEstate",
+          balance: 0,
+          ownershipPercent: "0.00",
+          priceInr: 500,
+          priceEth: "0.0001 ETH",
+          currentValueInr: 0,
+          currentValueEth: "0.000000 ETH",
+          totalSpentInr: 0,
+          totalSpentEth: "0.000000 ETH",
+          pnlInr: 0,
+          pnlEth: "+0.000000 ETH",
+          isProfit: true,
+        },
+      ]);
     }
-
-    // High fidelity sample data per PRD Section 8.7 & F7
-    setPortfolioRows([
-      {
-        key: "jaipur-flat",
-        symbol: "JFT",
-        name: "Jaipur Flat",
-        type: "RealEstate",
-        balance: 10,
-        ownershipPercent: "0.10",
-        priceInr: 540,
-        priceEth: "0.000108 ETH",
-        currentValueInr: 5400,
-        currentValueEth: "0.001080 ETH",
-        totalSpentInr: 5000,
-        totalSpentEth: "0.001000 ETH",
-        pnlInr: 400,
-        pnlEth: "+0.000080 ETH",
-        isProfit: true,
-      },
-      {
-        key: "jaipur-plot",
-        symbol: "JPT",
-        name: "Jaipur Plot",
-        type: "Plot",
-        balance: 5,
-        ownershipPercent: "0.10",
-        priceInr: 500,
-        priceEth: "0.000100 ETH",
-        currentValueInr: 2500,
-        currentValueEth: "0.000500 ETH",
-        totalSpentInr: 2500,
-        totalSpentEth: "0.000500 ETH",
-        pnlInr: 0,
-        pnlEth: "0.000000 ETH",
-        isProfit: true,
-      },
-      {
-        key: "digital-gold",
-        symbol: "TGOLD",
-        name: "Digital Gold",
-        type: "Gold",
-        balance: 20,
-        grams: 0.2,
-        ownershipPercent: "0.10",
-        priceInr: 162,
-        priceEth: "0.000032 ETH",
-        currentValueInr: 3240,
-        currentValueEth: "0.000648 ETH",
-        totalSpentInr: 3000,
-        totalSpentEth: "0.000600 ETH",
-        pnlInr: 240,
-        pnlEth: "+0.000048 ETH",
-        isProfit: true,
-      },
-      {
-        key: "sample-bond",
-        symbol: "TBOND",
-        name: "Sample Bond",
-        type: "Bond",
-        balance: 5,
-        ownershipPercent: "0.05",
-        priceInr: 500,
-        priceEth: "0.000100 ETH",
-        currentValueInr: 2500,
-        currentValueEth: "0.000500 ETH",
-        totalSpentInr: 2500,
-        totalSpentEth: "0.000500 ETH",
-        pnlInr: 0,
-        pnlEth: "0.000000 ETH",
-        isProfit: true,
-      },
-    ]);
   }, [address]);
 
   useEffect(() => {

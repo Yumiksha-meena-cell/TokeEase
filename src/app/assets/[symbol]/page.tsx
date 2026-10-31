@@ -23,7 +23,8 @@ import { Contract } from "ethers";
 import { MOCK_ASSETS } from "../../../data/mockData";
 import { inrToTokens, formatInr, formatEth, shortAddress } from "../../../lib/format";
 import { useWallet } from "../../../context/WalletContext";
-import { ASSET_ABI, ASSETS, isZeroAddress } from "../../../lib/contract";
+import { ASSET_ABI, ASSETS, FLAT_ADDRESS, getReadOnlyProvider, isZeroAddress } from "../../../lib/contract";
+import { formatEther } from "ethers";
 import { getFriendlyErrorMessage } from "../../../lib/errors";
 import { PriceChart } from "../../../components/PriceChart";
 import { RiskModal } from "../../../components/RiskModal";
@@ -52,11 +53,73 @@ function AssetIconBadge({ type, className }: { type: string; className?: string 
 function AssetDetailContent({ params }: AssetDetailPageProps) {
   const resolvedParams = use(params);
   const symbol = resolvedParams.symbol?.toUpperCase();
-  const asset = MOCK_ASSETS.find((a) => a.symbol.toUpperCase() === symbol) || MOCK_ASSETS[0];
-  const assetConfig = ASSETS.find((a) => a.symbol.toUpperCase() === symbol) || ASSETS[0];
-  const contractAddress = assetConfig?.address || "0x0000000000000000000000000000000000000000";
+  const baseAsset = MOCK_ASSETS.find((a) => a.symbol.toUpperCase() === symbol) || MOCK_ASSETS[0];
+  const contractAddress = FLAT_ADDRESS;
 
   const { isConnected, address, signer, kycStatus, refreshState } = useWallet();
+
+  // Live on-chain asset data
+  const [liveName, setLiveName] = useState<string>("Jaipur Flat");
+  const [livePriceWei, setLivePriceWei] = useState<bigint>(baseAsset.pricePerTokenWei);
+  const [liveTotalSupply, setLiveTotalSupply] = useState<number>(baseAsset.totalSupply);
+  const [liveRemaining, setLiveRemaining] = useState<number>(baseAsset.primarySaleRemaining);
+  const [userTokenBalance, setUserTokenBalance] = useState<number>(0);
+
+  // Fetch live on-chain data
+  React.useEffect(() => {
+    let active = true;
+    const fetchLive = async () => {
+      try {
+        const provider = getReadOnlyProvider();
+        const contract = new Contract(contractAddress, ASSET_ABI, provider);
+        const [onChainName, onChainPrice, onChainSupply, onChainRemaining] = await Promise.all([
+          contract.assetName().catch(() => ""),
+          contract.pricePerTokenWei().catch(() => BigInt("100000000000000")),
+          contract.totalSupply().catch(() => BigInt(10000)),
+          contract.primarySaleRemaining().catch(() => BigInt(10000)),
+        ]);
+
+        if (!active) return;
+        const displayName =
+          onChainName && typeof onChainName === "string" && onChainName.trim() !== ""
+            ? onChainName.trim()
+            : "Jaipur Flat";
+
+        setLiveName(displayName);
+        setLivePriceWei(BigInt(onChainPrice.toString()));
+        setLiveTotalSupply(Number(onChainSupply));
+        setLiveRemaining(Number(onChainRemaining));
+
+        if (address) {
+          const bal = await contract.balanceOf(address).catch(() => BigInt(0));
+          if (active) setUserTokenBalance(Number(bal));
+        }
+      } catch (err) {
+        console.warn("Could not fetch live contract state:", err);
+      }
+    };
+
+    fetchLive();
+    const interval = setInterval(fetchLive, 12000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [contractAddress, address]);
+
+  const priceEthFloat = parseFloat(formatEther(livePriceWei));
+  const priceInr = Math.round((priceEthFloat / 0.0001) * 500);
+
+  const asset: typeof baseAsset = {
+    ...baseAsset,
+    name: liveName,
+    pricePerTokenWei: livePriceWei,
+    priceInr,
+    priceEth: `${priceEthFloat} ETH`,
+    totalSupply: liveTotalSupply,
+    primarySaleRemaining: liveRemaining,
+    address: contractAddress,
+  };
 
   const [mode, setMode] = useState<"inr" | "tokens">("inr");
   const [inrAmount, setInrAmount] = useState<number>(asset.priceInr * 10);
@@ -79,14 +142,12 @@ function AssetDetailContent({ params }: AssetDetailPageProps) {
   const leftoverInr = mode === "inr" ? inrResult.leftoverInr : 0;
   const formattedEthCost = formatEth(totalCostWei, 6);
 
-  const presets = asset.type === "Gold"
-    ? [150, 450, 1500, 3000, 7500]
-    : [500, 1500, 5000, 10000, 25000];
+  const presets = [500, 1500, 5000, 10000, 25000];
 
   const tokensSold = asset.totalSupply - asset.primarySaleRemaining;
   const soldPercentage = Math.round((tokensSold / asset.totalSupply) * 100);
 
-  // Execute on-chain buy or fallback simulation
+  // Execute on-chain buy with MetaMask signer
   const handleBuyTokens = async () => {
     if (tokensToBuy <= 0) return;
 
@@ -96,37 +157,30 @@ function AssetDetailContent({ params }: AssetDetailPageProps) {
       return;
     }
 
-    // F6 Compliance Check: Revert / Block unapproved wallets with clear friendly explanation
+    // Friendly error check: unverified wallet cannot buy
     if (kycStatus !== "Approved") {
-      toast.error(
-        "Compliance Rule Triggered: Recipient is not KYC approved. Smart contract strictly forbids unverified wallets from holding tokens."
-      );
+      toast.error("This wallet is not KYC verified yet.");
       setIsKycModalOpen(true);
+      return;
+    }
+
+    if (!signer) {
+      toast.error("Signer not ready. Please check MetaMask.");
       return;
     }
 
     setIsBuying(true);
     try {
-      if (!isZeroAddress(contractAddress) && signer) {
-        toast.info("Waiting for MetaMask signature...");
-        const assetContract = new Contract(contractAddress, ASSET_ABI, signer);
-        const tx = await assetContract.buy(tokensToBuy, { value: totalCostWei });
-        toast.info("Transaction sent to Sepolia! Minting tokens...");
-        const receipt = await tx.wait();
-        setSimulatedTxHash(receipt?.hash || tx.hash);
-        setPurchaseSuccess(true);
-        toast.success(`Minted ${tokensToBuy} ${asset.symbol} tokens successfully!`);
-        refreshState();
-      } else {
-        // High fidelity demo fallback
-        const randomHash = `0x${Array.from({ length: 40 }, () =>
-          Math.floor(Math.random() * 16).toString(16)
-        ).join("")}`;
-        setSimulatedTxHash(randomHash);
-        setPurchaseSuccess(true);
-        toast.success(`Demo Purchase: Minted ${tokensToBuy} ${asset.symbol} tokens!`);
-      }
-    } catch (err: any) {
+      toast.info("Waiting for MetaMask signature...");
+      const assetContract = new Contract(contractAddress, ASSET_ABI, signer);
+      const tx = await assetContract.buy(tokensToBuy, { value: totalCostWei });
+      toast.info("Transaction sent to Sepolia! Minting tokens...");
+      const receipt = await tx.wait();
+      setSimulatedTxHash(receipt?.hash || tx.hash);
+      setPurchaseSuccess(true);
+      toast.success(`Successfully bought ${tokensToBuy} ${asset.symbol} tokens!`);
+      refreshState();
+    } catch (err: unknown) {
       console.error("Buy error:", err);
       toast.error(getFriendlyErrorMessage(err));
     } finally {
