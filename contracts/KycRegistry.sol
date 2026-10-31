@@ -5,11 +5,12 @@ import "@openzeppelin/contracts@5.0.2/access/Ownable.sol";
 
 /**
  * @title KycRegistry
- * @dev Shared on-chain identity registry for TokeEase platform.
- * A single KYC approval in this contract authorizes the wallet across all asset classes.
- * No personal data is stored on-chain; only hashed representations of identity data.
+ * @dev TokeEase platform ka shared KYC registry contract.
+ * Ek baar verified hone par wallet saare 4 assets (Real Estate, Plot, Gold, Bond) me invest kar sakta hai.
+ * On-chain koi personal data store nahi hota, sirf keccak256 identity proof hash store hota hai.
  */
 contract KycRegistry is Ownable {
+    // KYC status enum matching PRD Section 8.2
     enum KycStatus {
         None,
         Pending,
@@ -17,29 +18,29 @@ contract KycRegistry is Ownable {
         Rejected
     }
 
-    // Wallet address => Verification status
+    // Har wallet address ka current KYC status
     mapping(address => KycStatus) public kycStatus;
 
-    // Wallet address => keccak256 hash of submitted form data
+    // Har wallet address ke submitted form data ka keccak256 cryptographic hash
     mapping(address => bytes32) public kycHash;
 
-    // Ordered list of wallets that requested KYC (for admin review)
+    // Requesters ki array jisse admin pending users ko review kar sake
     address[] public kycRequesters;
     mapping(address => bool) private hasRequested;
 
-    // Events
+    // Events matching PRD Section 8.2
     event KycRequested(address indexed user, bytes32 dataHash);
     event KycApproved(address indexed user);
     event KycRejected(address indexed user);
 
     /**
-     * @dev Sets the contract deployer as the initial owner/admin.
+     * @dev Deployer ko initial admin / owner set karta hai.
      */
     constructor(address initialOwner) Ownable(initialOwner) {}
 
     /**
-     * @dev Allows any user with None or Rejected status to submit a KYC request.
-     * @param dataHash keccak256 hash of demo KYC details generated in browser.
+     * @dev User demo KYC form submit karta hai aur status Pending ho jata hai.
+     * @param dataHash Browser me calculate kiya gaya keccak256 identity hash.
      */
     function requestKyc(bytes32 dataHash) external {
         require(
@@ -60,7 +61,7 @@ contract KycRegistry is Ownable {
     }
 
     /**
-     * @dev Approves a user's KYC verification. Only contract owner can call.
+     * @dev Admin kisi bhi user ka KYC approve karta hai.
      */
     function approveKyc(address user) external onlyOwner {
         require(user != address(0), "Invalid address");
@@ -69,7 +70,7 @@ contract KycRegistry is Ownable {
     }
 
     /**
-     * @dev Rejects a user's KYC verification. Only contract owner can call.
+     * @dev Admin kisi bhi user ka KYC reject karta hai.
      */
     function rejectKyc(address user) external onlyOwner {
         require(user != address(0), "Invalid address");
@@ -78,7 +79,7 @@ contract KycRegistry is Ownable {
     }
 
     /**
-     * @dev Revokes approval, setting status back to Rejected. Only contract owner can call.
+     * @dev Admin kisi approved user ka KYC revoke (reject) karta hai.
      */
     function revokeKyc(address user) external onlyOwner {
         require(user != address(0), "Invalid address");
@@ -87,21 +88,21 @@ contract KycRegistry is Ownable {
     }
 
     /**
-     * @dev Primary view function consumed by AssetToken contracts to verify compliance.
+     * @dev Check karta hai ki user KYC approved hai ya nahi (AssetToken contracts isko padhte hain).
      */
     function isApproved(address user) external view returns (bool) {
         return kycStatus[user] == KycStatus.Approved;
     }
 
     /**
-     * @dev Alternate helper with matching naming convention for interface compatibility.
+     * @dev Alternate view helper standard interface compatibility ke liye.
      */
     function isKycApproved(address user) external view returns (bool) {
         return kycStatus[user] == KycStatus.Approved;
     }
 
     /**
-     * @dev Returns the full array of applicants for admin review.
+     * @dev Saare KYC request karne wale wallets ki array admin panel ke liye return karta hai.
      */
     function getKycRequesters() external view returns (address[] memory) {
         return kycRequesters;

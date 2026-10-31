@@ -7,7 +7,7 @@ import "@openzeppelin/contracts@5.0.2/utils/ReentrancyGuard.sol";
 
 /**
  * @title IKycRegistry
- * @dev Interface for the shared TokeEase KYC registry contract.
+ * @dev Shared KycRegistry contract ka interface.
  */
 interface IKycRegistry {
     function isApproved(address user) external view returns (bool);
@@ -16,8 +16,8 @@ interface IKycRegistry {
 
 /**
  * @title AssetToken
- * @dev Unified tokenisation engine powering Real Estate, Land Plots, Digital Gold, and Bonds.
- * Built for OpenZeppelin v5.0.2, overriding _update to enforce on-chain KYC compliance for every transfer.
+ * @dev TokeEase ka unified smart contract jo Real Estate, Land Plots, Gold aur Bonds chaaro ko tokenise karta hai.
+ * OpenZeppelin v5.0.2 use karta hai aur _update hook se on-chain compliance enforce karta hai.
  */
 contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     enum AssetType {
@@ -27,41 +27,40 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
         Bond
     }
 
-    // Core asset attributes
+    // Core variables (PRD Section 8.3)
     AssetType public immutable assetType;
     IKycRegistry public immutable registry;
     uint256 public immutable TOTAL_SUPPLY;
 
-    // Pricing & primary offering
     uint256 public pricePerTokenWei;
     uint256 public primarySaleRemaining;
 
-    // Holder tracking for income distributions (Rent / Coupons)
+    // Income payouts (Rent / Coupon) ke liye holders tracking
     address[] public holders;
     mapping(address => bool) public isHolder;
 
-    // Cost basis tracking for investor portfolio P/L calculation
+    // Portfolio profit/loss calculate karne ke liye user cost basis
     mapping(address => uint256) public totalSpentWei;
 
-    // Historical price points for on-chain performance charts
+    // Historical price points chart rendering ke liye
     struct PricePoint {
         uint256 timestamp;
         uint256 price;
     }
     PricePoint[] public priceHistory;
 
-    // Descriptive metadata (F13)
+    // Asset descriptive metadata (PRD F13)
     string public assetName;
     string public assetLocation;
     string public documentURI;
 
-    // Bond-specific parameters (F17)
+    // Bond specific terms (PRD F17)
     uint256 public faceValueWei;
     uint256 public couponRateBps;
     uint256 public maturityTimestamp;
     bool public bondTermsSet;
 
-    // Peer-to-peer marketplace listings (F11)
+    // Peer-to-peer marketplace listings (PRD F11)
     struct Listing {
         address seller;
         uint256 amount;
@@ -81,7 +80,7 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     event ListingCancelled(uint256 indexed id);
 
     /**
-     * @dev Deploys the asset, mints entire initial supply to the contract address, and sets initial price.
+     * @dev Contract deploy hote hi saare tokens contract address ko mint karta hai aur initial price set karta hai.
      */
     constructor(
         address initialOwner,
@@ -102,10 +101,10 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
         primarySaleRemaining = totalSupply_;
         pricePerTokenWei = initialPriceWei;
 
-        // Mint all initial tokens to contract address for primary distribution and escrow
+        // Saare tokens contract me mint hote hain primary sale aur marketplace escrow ke liye
         _mint(address(this), totalSupply_);
 
-        // Record genesis price point
+        // Genesis price point add karta hai
         priceHistory.push(PricePoint({
             timestamp: block.timestamp,
             price: initialPriceWei
@@ -113,14 +112,14 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Overrides ERC-20 decimals to 0 so 1 token represents 1 discrete fractional unit.
+     * @dev Decimals ko 0 return karta hai taaki 1 token = 1 whole unit rahe.
      */
     function decimals() public pure override returns (uint8) {
         return 0;
     }
 
     /**
-     * @dev Primary purchase function allowing KYC-approved wallets to buy tokens directly with ETH.
+     * @dev KYC-approved wallet ko ETH bhej kar primary pool se tokens buy karne deta hai.
      */
     function buy(uint256 amount) external payable nonReentrant {
         require(registry.isApproved(msg.sender), "Not KYC approved");
@@ -136,7 +135,7 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Allows the admin to update descriptive labels, legal document URLs, and location metadata.
+     * @dev Admin ko asset ka naam, location (ya unit text) aur legal document link update karne deta hai.
      */
     function setAssetInfo(
         string memory name,
@@ -149,7 +148,7 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Configures bond specific terms such as face value, coupon basis points, and maturity timestamp.
+     * @dev Bond asset ke liye face value, coupon basis points aur maturity date ek baar set karta hai.
      */
     function setBondTerms(
         uint256 _faceValueWei,
@@ -168,7 +167,7 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Updates the simulated token price and appends a timestamped point to on-chain price history.
+     * @dev Admin token ka naya price set karta hai aur on-chain price history me timestamp ke sath record karta hai.
      */
     function updatePrice(uint256 newPriceWei) external onlyOwner {
         require(newPriceWei > 0, "Price must be greater than zero");
@@ -182,7 +181,7 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Returns timestamp and price arrays suitable for rendering frontend trend charts.
+     * @dev Frontend line chart draw karne ke liye historical timestamps aur prices ke arrays return karta hai.
      */
     function getPriceHistory() external view returns (uint256[] memory timestamps, uint256[] memory prices) {
         uint256 len = priceHistory.length;
@@ -196,7 +195,7 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Distributes sent ETH proportionally among token holders as rental yield or bond coupons.
+     * @dev Deposit kiye gaye ETH ko saare token holders me unke balance ke anupaat me rent ya coupon ki tarah baant deta hai.
      */
     function distributeIncome() external payable onlyOwner nonReentrant {
         require(msg.value > 0, "Must send ETH to distribute");
@@ -222,7 +221,7 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Settles bond maturity by repaying face value to holders and burning the tokenized shares.
+     * @dev Bond maturity poori hone par token holders ko unki face value repay karke tokens burn karta hai.
      */
     function settleMaturity() external payable onlyOwner nonReentrant {
         require(assetType == AssetType.Bond, "Only bond assets can settle maturity");
@@ -250,7 +249,7 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Escrows tokens from a verified holder into the contract to list them on the marketplace.
+     * @dev KYC-approved seller ke tokens contract me escrow karke marketplace par nayi listing create karta hai.
      */
     function createListing(uint256 amount, uint256 priceWei) external nonReentrant {
         require(registry.isApproved(msg.sender), "Not KYC approved");
@@ -272,7 +271,7 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Buys an entire active peer-to-peer listing, transferring tokens to buyer and ETH to seller.
+     * @dev KYC-approved buyer dwara active listing ko khareedta hai, seller ko ETH bhejta hai aur tokens buyer ko deta hai.
      */
     function buyListing(uint256 id) external payable nonReentrant {
         require(registry.isApproved(msg.sender), "Not KYC approved");
@@ -294,7 +293,7 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Cancels an active listing and releases the escrowed tokens back to the original seller.
+     * @dev Active listing ko cancel karke escrowed tokens wapas seller ke account me bhejta hai.
      */
     function cancelListing(uint256 id) external nonReentrant {
         require(id < listings.length, "Invalid listing ID");
@@ -309,14 +308,14 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Returns total count of marketplace listings created on this contract.
+     * @dev Marketplace par bani total listings ki ginti return karta hai.
      */
     function listingsCount() external view returns (uint256) {
         return listings.length;
     }
 
     /**
-     * @dev Allows contract owner to withdraw primary sales and undistributed escrow balances.
+     * @dev Admin ko contract me primary sales se jama hua ETH withdraw karne deta hai.
      */
     function withdraw() external onlyOwner nonReentrant {
         uint256 bal = address(this).balance;
@@ -326,7 +325,7 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev OpenZeppelin v5.0.2 transfer hook enforcing on-chain compliance and registering holders.
+     * @dev OpenZeppelin v5.0.2 ka transfer hook jo check karta hai ki recipient KYC approved hai aur naye holders ko list me add karta hai.
      */
     function _update(
         address from,
@@ -335,13 +334,12 @@ contract AssetToken is ERC20, Ownable, ReentrancyGuard {
     ) internal override {
         super._update(from, to, value);
 
-        // Compliance check (F6):
-        // Transfers (except minting) must send only to KYC-approved wallets, the contract itself (escrow), or address(0) (burns)
+        // Compliance check (PRD F6): recipient must be approved in registry, unless contract escrow or mint/burn
         if (from != address(0) && to != address(0) && to != address(this)) {
             require(registry.isApproved(to), "Recipient is not KYC approved");
         }
 
-        // Holder tracking for income distributions
+        // Holder tracking for income distribution loop (PRD F10)
         if (to != address(0) && to != address(this) && !isHolder[to]) {
             isHolder[to] = true;
             holders.push(to);
